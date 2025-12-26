@@ -1,7 +1,19 @@
 const obs = new OBSWebSocket();
+
+// Standardize the Haptic function name
+const triggerHapticFeedback = () => {
+    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        navigator.vibrate(15);
+    }
+};
+
+// If your older code uses 'poke', point it to the new one
+const poke = triggerHapticFeedback;
+
+
+
 let timerIdx = null, seconds = 0, reconnectInterval = null;
 let customSounds = JSON.parse(localStorage.getItem('obs_custom_sounds')) || [];
-
 // --- 1. THE MASTER BUTTON FACTORY ---
 function createButton(label, icon, action, id = null) {
     const btn = document.createElement('button');
@@ -10,10 +22,22 @@ function createButton(label, icon, action, id = null) {
 
     const fontSizeClass = label.length > 12 ? 'text-small' : '';
 
-    btn.innerHTML = `
-        <span class="material-symbols-outlined">${icon}</span>
-        <span class="label-text ${fontSizeClass}">${label}</span>
-    `;
+    // Check if icon is an Emoji (Regex checks for non-text/standard characters)
+    const isEmoji = /\p{Emoji}/u.test(icon) && !/^[a-z0-9_]+$/i.test(icon);
+
+    if (isEmoji) {
+        // If it's an emoji, use a plain span with a specific class for sizing
+        btn.innerHTML = `
+            <span class="emoji-icon">${icon}</span>
+            <span class="label-text ${fontSizeClass}">${label}</span>
+        `;
+    } else {
+        // If it's a word (like 'mic'), use the Google Icon span
+        btn.innerHTML = `
+            <span class="material-symbols-outlined">${icon}</span>
+            <span class="label-text ${fontSizeClass}">${label}</span>
+        `;
+    }
 
     btn.onclick = () => {
         if (navigator.vibrate) navigator.vibrate(15);
@@ -70,7 +94,7 @@ function renderSystemButtons() {
     grid.appendChild(createButton('Live', 'podcasts', () => obs.call('ToggleStream'), 'stream-btn'));
     grid.appendChild(createButton('Rec', 'fiber_manual_record', () => obs.call('ToggleRecord'), 'record-btn'));
     grid.appendChild(createButton('Clip', 'history', saveReplay, 'replay-btn'));
-    grid.appendChild(createButton('All Sound On/Off', 'volume_off', toggleGlobalAudio, 'master-mute'));
+    grid.appendChild(createButton('Mute', 'volume_off', toggleGlobalMute, 'master-mute'));
 }
 let sortableInstance; // Global variable to store the sortable object
 
@@ -181,7 +205,8 @@ async function loadAudioMixer() {
             'ffmpeg_source', 
             'pipewire-audio-client-external', 
             'pulse_input_capture', 
-            'pulse_output_capture'
+            'pulse_output_capture',
+            'vlc_source'
         ];
 
         for (const input of inputs) {
@@ -245,35 +270,62 @@ async function createAudioMuteButton(input, container) {
 
 // --- 4. SOUNDBOARD LOGIC ---
 function addNewSound() {
-    const emoji = document.getElementById('new-sound-emoji').value || '🎵';
-    const name = document.getElementById('new-sound-name').value.trim();
-    if (!name) return alert("Enter OBS Source Name");
-    customSounds.push({ emoji, name });
+    triggerHapticFeedback();
+    
+    const nameInput = document.getElementById('new-sound-name');
+    const emojiInput = document.getElementById('new-sound-emoji');
+    
+    const name = nameInput.value.trim();
+    // Default to 'play_arrow' if emoji input is empty
+    const icon = emojiInput.value.trim() || 'play_arrow';
+
+    if (!name) {
+        alert("Please enter the Source Name exactly as it appears in OBS.");
+        return;
+    }
+
+    // Add to our global array
+    customSounds.push({
+        name: name,
+        icon: icon
+    });
+
+    // Save to LocalStorage so it persists after refresh
     localStorage.setItem('obs_custom_sounds', JSON.stringify(customSounds));
+
+    // Refresh the UI
     renderSoundboard();
+
+    // Clear the inputs for the next sound
+    nameInput.value = '';
+    emojiInput.value = '';
+    
+    console.log(`Added sound: ${name} with icon: ${icon}`);
 }
 
 function renderSoundboard() {
     const grid = document.getElementById('soundboard-grid');
+    if (!grid) return;
     grid.innerHTML = '';
 
     customSounds.forEach((sound, index) => {
-        // Create the play button using your Master Factory
-        // Note: We pass a simple emoji or icon for the play button
+        const buttonIcon = sound.icon || 'play_arrow';
+
         const btn = createButton(
             sound.name, 
-            'play_arrow', // Simple play icon
+            buttonIcon, 
             () => {
                 obs.call('TriggerMediaInputAction', { 
                     inputName: sound.name, 
                     mediaAction: 'OBS_WEBSOCKET_MEDIA_INPUT_ACTION_RESTART' 
-                });
+                }).catch(err => console.error("Playback error:", err));
             }
         );
         
-        // Context menu (Long press) to delete a sound from the board
+        // Context menu (Long press) to delete
         btn.oncontextmenu = (e) => {
             e.preventDefault();
+            triggerHapticFeedback(); // Use your haptic helper
             if(confirm(`Delete ${sound.name}?`)) {
                 customSounds.splice(index, 1);
                 localStorage.setItem('obs_custom_sounds', JSON.stringify(customSounds));
@@ -284,7 +336,6 @@ function renderSoundboard() {
         grid.appendChild(btn);
     });
 }
-
 function clearSoundboardData() {
     if (confirm("Are you sure you want to remove ALL buttons from your soundboard?")) {
         // 1. Empty the local array
@@ -301,33 +352,48 @@ function clearSoundboardData() {
 }
 
 // --- 5. GLOBAL MUTE TOGGLE ---
-async function toggleGlobalAudio() {
-    const { inputs } = await obs.call('GetInputList');
-    const audioKinds = ['wasapi_input_capture', 'wasapi_output_capture', 'wasapi_process_output_capture', 'ffmpeg_source'];
-    const audioInputs = inputs.filter(i => audioKinds.includes(i.inputKind));
+async function toggleGlobalMute() {
+    triggerHapticFeedback();
     
-    let shouldMute = false;
-    for (const i of audioInputs) {
-        const { inputMuted } = await obs.call('GetInputMute', { inputName: i.inputName });
-        if (!inputMuted) { shouldMute = true; break; }
+    const masterBtn = document.getElementById('master-mute');
+    if (!masterBtn) return;
+
+    try {
+        // 1. Check the UI: If the button is RED (danger-active), we want to UNMUTE (false)
+        // If the button is NOT red, we want to MUTE (true)
+        const shouldMute = !masterBtn.classList.contains('danger-active');
+
+        // 2. Get all sources
+        const { inputs } = await obs.call('GetInputList');
+
+        // 3. Process every source individually
+        for (const input of inputs) {
+            try {
+                await obs.call('SetInputMute', {
+                    inputName: input.inputName,
+                    inputMuted: shouldMute
+                });
+            } catch (innerError) {
+                // Ignore errors for images/scenes/sources without audio
+                continue;
+            }
+        }
+
+        // 4. Update the Master Button UI immediately
+        if (shouldMute) {
+            masterBtn.classList.add('danger-active');
+            masterBtn.querySelector('span').innerText = 'All Muted';
+            masterBtn.querySelector('.material-symbols-outlined').innerText = 'volume_off';
+        } else {
+            masterBtn.classList.remove('danger-active');
+            masterBtn.querySelector('span').innerText = 'All Sound On';
+            masterBtn.querySelector('.material-symbols-outlined').innerText = 'volume_up';
+        }
+
+    } catch (error) {
+        console.error("Global Mute Error:", error);
     }
-    audioInputs.forEach(i => obs.call('SetInputMute', { inputName: i.inputName, inputMuted: shouldMute }));
-}
-
-// --- 6. EVENT LISTENERS ---
-obs.on('InputMuteStateChanged', d => {
-    const btn = document.getElementById(`mute-${d.inputName.replace(/\s+/g, '-')}`);
-    if (btn) btn.classList.toggle('danger-active', d.inputMuted);
-});
-
-obs.on('CurrentProgramSceneChanged', d => {
-    document.querySelectorAll('[id^="scene-"]').forEach(b => b.classList.remove('active'));
-    const active = document.getElementById(`scene-${d.sceneName.replace(/\s+/g, '-')}`);
-    if (active) active.classList.add('active');
-});
-
-
-// --- 7. TIMER & STATE LOGIC ---
+}// --- 7. TIMER & STATE LOGIC ---
 
 /**
  * Checks if OBS is streaming or recording and starts/stops the clock
@@ -436,4 +502,9 @@ obs.on('CurrentProgramSceneChanged', async data => {
     // We move this OUTSIDE the if(activeBtn) so the mixer updates 
     // even if you switch to a scene that doesn't have a button yet.
     await loadAudioMixer();
+});
+
+obs.on('InputMuteStateChanged', async () => {
+    // Optional: Add logic here to check if ALL inputs are currently muted
+    // and highlight the 'master-mute' button automatically.
 });

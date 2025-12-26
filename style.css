@@ -8,6 +8,33 @@
     --border: #2a2a2a;
 }
 
+/* 1. Target EVERYTHING to be sure */
+* {
+    -webkit-tap-highlight-color: rgba(0,0,0,0) !important;
+    -webkit-tap-highlight-color: transparent !important;
+}
+
+/* 2. Target specific interactive elements explicitly */
+button, 
+input, 
+select, 
+textarea, 
+a, 
+.btn, 
+.mixer-btn,
+.scene-btn {
+    -webkit-tap-highlight-color: rgba(0,0,0,0) !important;
+    outline: none !important;
+    -webkit-focus-ring-color: transparent !important;
+}
+
+/* 3. Remove the 'focus' outline that appears after clicking */
+button:focus, 
+.btn:focus {
+    outline: none !important;
+    box-shadow: none !important;
+}
+
 body {
     background: var(--bg);
     color: var(--text);
@@ -120,7 +147,31 @@ overflow: hidden; /* Important: hides the extra text */
     font-size: 24px;
     flex-shrink: 0; 
 }
+.panic-btn {
+    background-color: #2ecc71; /* Green when safe */
+    color: white;
+    padding: 15px 30px;
+    border-radius: 12px;
+    border: none;
+    font-weight: bold;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    transition: background 0.3s ease;
+}
 
+/* Red and Pulsing when everything is muted */
+.panic-btn.panic-active {
+    background-color: #e74c3c;
+    animation: pulse-red 2s infinite;
+}
+
+@keyframes pulse-red {
+    0% { box-shadow: 0 0 0 0 rgba(231, 76, 60, 0.7); }
+    70% { box-shadow: 0 0 0 15px rgba(231, 76, 60, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(231, 76, 60, 0); }
+}
 
 /* Master Panic Button spanning full width */
 #master-mute {
@@ -131,7 +182,10 @@ overflow: hidden; /* Important: hides the extra text */
     gap: 15px;
     background: linear-gradient(145deg, #121212, #0a0a0a);
 }
-
+#master-mute.danger-active {
+    background-color: #ff5252 !important;
+    color: white !important;
+}
 .btn:active { transform: scale(0.92); }
 
 /* --- GOOGLE ICONS --- */
@@ -285,3 +339,65 @@ input {
 
 input:checked + .slider { background-color: var(--accent); }
 input:checked + .slider:before { transform: translateX(20px); }
+
+
+/* --- CLOSE BUTTON FOR CONFIG --- */
+.close-config {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    background: #1a1a1a;
+    border: 1px solid var(--border);
+    color: var(--text);
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 1001;
+    transition: all 0.2s ease;
+}
+
+.close-config:active {
+    transform: scale(0.9);
+    background: #252525;
+}
+
+.close-config .material-symbols-outlined {
+    font-size: 20px !important;
+}
+
+/* Adjust Config padding to make room for the button */
+#config {
+    padding-top: 60px; /* Increased top padding */
+}
+
+/* Make emojis large and centered */
+.emoji-icon {
+    font-size: 38px !important; /* Significantly larger */
+    line-height: 1;
+    display: block;
+    margin-bottom: 5px;
+    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5)); /* Makes them stand out */
+}
+
+#new-sound-emoji {
+    font-size: 20px; /* Makes the emoji easier to see while typing */
+    padding: 10px;
+    border: 1px solid var(--border);
+    background: #000;
+    color: white;
+    border-radius: 12px;
+}
+/* Force the placeholder emoji to be visible and full opacity */
+#new-sound-emoji::placeholder {
+    font-size: 16px; /* Make the placeholder emoji larger */
+    line-height: normal;
+}
+
+/* Fix for Safari/iOS which often dims placeholders */
+#new-sound-name {
+    flex-grow: 1; /* Makes the name input take up the remaining space */
+}

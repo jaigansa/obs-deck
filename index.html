@@ -26,6 +26,9 @@
     <div id="soundboard-grid" class="grid"></div>
 
     <div id="config">
+      <button class="close-config" onclick="document.getElementById('config').classList.toggle('open')">
+        <span class="material-symbols-outlined">close</span>
+    </button>
         <h2>Connection</h2>
         <input type="text" id="ip" value="192.168.0.90">
         <input type="text" id="port" value="4455">
@@ -41,7 +44,7 @@
 
         <h2>Add Sound Button</h2>
         <div style="display: flex; gap: 5px;">
-            <input type="text" id="new-sound-emoji" placeholder="🎬" style="width: 50px; text-align: center;">
+            <input type="text" id="new-sound-emoji" placeholder="emoji" style="width: 75px; text-align: center;">
             <input type="text" id="new-sound-name" placeholder="Source Name in OBS">
         </div>
         <button onclick="addNewSound()" class="save-btn">+ ADD TO SOUNDBOARD</button>
